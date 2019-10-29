@@ -1,1 +1,2 @@
 # MILP-in-OMPR
+Hello, I'm new to GitHub and hoping to get help to resolve the issues I'm currently having with my OMPR based MILP optimization model. The problems I'm having primarily have to do with some of the constraints indexing. I provided the mathematical formulation and my first script for the model. I should mention that I'm learning optimization modeling in R. Thank you very much for the help.  
