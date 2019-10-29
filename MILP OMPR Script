@@ -1,0 +1,147 @@
+###Packages required###
+
+library(dplyr)
+library(ROI)
+library(ROI.plugin.symphony)
+library(ompr)
+library(ompr.roi)
+#################################################################################################################
+
+###MODEL FORMULATION###
+
+###Indices and Sets [approximate cardinality] with user defined values###
+
+L <- 7          
+#l=1:L;  lprime=1:L????
+M <- 2200       
+#m <- 1:M
+I <- 15         
+#i <- 1:I
+R <- 20         
+#r <- 1:R 
+TIME <- 144     
+Tr <- 12           
+N <- 12	    
+#t <- 1:TIME; t' <- 1:TIME
+C <- 20         
+#c <- 1:C 
+E <- 40         
+#e <- 1:E
+Y <- 13         
+#y <- 1:Y;  y' <- 1:Y
+#M[l] <- c(4, 5)            
+#l[m] <- c(9,11,15,20)            
+REP <- 10
+#(y,y') E REP   
+#(t,y,l, l')    
+                
+
+###Input Data###
+
+iq[e,l]               
+d[t,m]                
+ok[m,i,c]              
+			                
+omc[e]                
+pc[y]                 
+rc[y]                 
+b[t,y]                
+pr[t,y]               
+p[m]                  
+                      
+ec[c,e]               
+es[y,e]               
+he[e]                 
+                      
+hm[m]                
+                      
+hi[m,i]               
+su[e]                 
+transdays[y,l,lprime] 
+                      
+sr[m,c]               
+                      
+upperbounds[y]        
+                      
+mr[t,y]               
+intial[y]             
+
+#################################################################################################
+
+###Calculated Data###
+
+max[t,y] <- min(upperbounds[y] - intial[y], sum_expr(pr[tprime, y]))    
+ht[e,y,l,lprime] <- min(1,transdays[y,l,lprime]/26 )*he[e]*es[y,e]
+
+######################################################################################################################
+###Decision Variables###
+
+###Binary Variables###
+
+#P[t,c,l]         
+                
+               
+###Positive Integer Variables###
+
+#G[t,y,l,l']      
+#Z[t,y,l]         
+#D[t,y,l]         
+
+###Positive Variables###
+
+#X[t,m,c,i]       
+                 
+#S[t,m,c]         
+                  
+#Q[t,e,l]        
+#B[t]             
+
+#####################################################################################################################
+###Formulation###
+
+JPAT_MODEL <- MILPModel() %>%
+  #Add all decision variables
+  add_variable(P[t,c,l], t = 1:Tr, c = 1:C, l = 1:L , type = "binary") %>%
+  add_variable(G[t,y,l,lprime], t = 1:Tr, y = 1:Y, l = 1:L, lprime = 1:L, type = "integer", lb = 0) %>%
+  add_variable(Z[t,y,l], t = 1:Tr, y = 1:Y, l = 1:L, type = "integer", lb = 0) %>%
+  add_variable(D[t,y,l], t = 1:Tr, y = 1:Y, l = 1:L, type = "integer", lb = 0) %>%
+  add_variable(X[t,m,c,i], t = 1:Tr, m = 1:M, c = 1:C, i = 1:I, type = "continuous", lb = 0) %>%
+  add_variable(S[t,m,c], t = 1:Tr, m = 1:M, c = 1:C, type = "continuous", lb = 0) %>%
+  add_variable(Q[t,e,l], t = 1:Tr, e = 1:E, l = 1:L, type = "continuous", lb = 0) %>%
+  add_variable(B[t], t = 1:Tr, type = "continuous", lb = 0) %>%
+  
+  #Define the objective function
+  Objective_Function <- set_objective(sum_expr(p[m]*ok[m,i,c]*(X[t,m,c,i]/sum_expr(hi[m,iprime])), 
+                                               m = 1:M, i = 1:I, c = 1:C, t = 1:Time), "min") %>%         #Objective Function
+  
+  #Add constraints
+  add_constraint (sum_expr(X[t,m,c,i], t = 1:Tr, m = 1:M, c = 1:C, i = 1:I) <=  
+			hi[m,i]*d[t,m], m = 1:M, i = 1:I, t = 1:Tr) %>% 						                                        #cons_1
+  add_constraint (Q[t,e,l], t = Tr, e = 1:E, l = 1:L = Q[t-1,e,l] + 
+			es[y,e]*sum_expr(D[t,y,l], y = 1:Y - Z[t,y,l] + 
+			sum_expr(G[t,y,lprime,l], lprime = 1:L - G[t,y,l,lprime]))) %>%          				                    #cons_2
+  add_constraint (Q[t,e,l] = iq[e,l], t = 1, e = 1:E, l = 1:L) %>%						                            #cons_3
+  add_constraint (P[t,c,l], t = Tr, c = 1:C, l = 1:L <= Q[t,e,l]/ec[c,e], e = 1:E) %>%			              #cons_4
+  add_constraint (S[t,m,c], t = Tr, m = 1:M, c = 1:C <= sr[m,c]*d[t,m]*P[t,c,l], l = 1:L ) %>%	          #cons_5
+  add_constraint (X[t,m,c,i], t = Tr, m = 1:M, c = 1:C, i = 1:I <= hm[m]*S[t,m,c]/sr[m,c]) %>%	          #cons_6
+  add_constraint (sum_expr(ht[e,y,l,lprime]*G[t,y,l,lprime]), e = 1:E, y = 1:Y, l = 1:L, lprime = 1:L + 
+                  sum_expr(ec[c,e]*(hm[m]/sr[m,c] + su[e])*S[t,m,c],  1:TIME, m = 1:M, c = 1:C) <=  
+			            he[e]*Q[t,e,l], t = TIME, e = 1:E, l = 1:L) %>% 						                            #cons_7
+  add_constraint (B[t] = B[t-1] + sum_expr(b[t,y]) - sum_expr(pc[y]*D[t,y,l] + rc[y]*Z[t,y,l]) - 
+                    sum_expr(omc[e]*Q[t,e,l]), t = 2:Tr/N:t>1, y = 1:Y, l = 1:L, e = 1:E) %>% 						#cons_8
+  add_constraint (sum_expr(pc[y]*D[t,y,l]) + sum_expr(rc[y]*Z[t,y,l]) + sum_expr(omc[e]*Q[t,e,l]), 
+                  t = intersect(Tr, N), y = 1:Y, l = 1:L, e = 1:E <= sum_expr(b[t,y])) %>% 						    #cons_9
+  add_constraint (B[t] = 0, t = intersect(Tr, N)) %>%                                                     #cons_10
+  add_constraint (sum_expr(D[tprime,y,l]), t = 1:Tr, tprime <= t, y = 1:Y, l = 1:L <= max[t,y]) %>%       #cons_11
+  add_constraint (sum_expr(Z[tprime,y,l]), t = 1:Tr, tprime <= t, y = 1:Y, l = 1:L >= 
+                 sum_expr(D[tprime,yprime,l], y = 1:Y, yprime = 1:Y)) %>%                                 #cons_12
+
+
+  #Select the appropriate solver
+  solve_model(with_ROI(solver = "symphony", verbosity = 1)) %>%                                           #Select appropriate solver
+  
+  #Get the optimal solution
+  Optimal_Solution <- get_solution(Objective_Function, P[t,c,l],G[t,y,l,lprime], Z[t,y,l], 
+                                   D[t,y,l], X[t,m,c,i], S[t,m,c], Q[t,e,l], B[t]) %>%                    #Optimal solution
+  filter(value > 0) %>%
+  arrange()
